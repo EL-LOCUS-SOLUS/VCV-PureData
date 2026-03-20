@@ -40,7 +40,13 @@ ifdef ARCH_MAC
 	# Perhaps inline assembly is used in libpd? Who knows.
 	cd dep/libpd && $(MAKE) MULTI=true STATIC=true ADDITIONAL_CFLAGS='-DPD_LONGINTTYPE="long long" $(DEP_MAC_SDK_FLAGS) -stdlib=libc++' ADDITIONAL_LDFLAGS='$(DEP_MAC_SDK_FLAGS) -stdlib=libc++'
 else
+ifdef ARCH_WIN
+	# libpd relies on OS=Windows_NT for platform detection even when cross-compiling.
+	# Also force heap allocation path to avoid missing alloca.h in some MinGW toolchains.
+	cd dep/libpd && $(MAKE) OS=Windows_NT MULTI=true STATIC=true ADDITIONAL_CFLAGS='-DPD_LONGINTTYPE="long long" -DDONT_USE_ALLOCA=1'
+else
 	cd dep/libpd && $(MAKE) MULTI=true STATIC=true ADDITIONAL_CFLAGS='-DPD_LONGINTTYPE="long long"'
+endif
 endif
 	cd dep/libpd && $(MAKE) install prefix="$(DEP_PATH)"
 
