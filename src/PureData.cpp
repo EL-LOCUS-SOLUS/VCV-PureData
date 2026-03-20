@@ -1,10 +1,8 @@
 
 #include <rack.hpp>
-
 // libpd
 #include "z_libpd.h"
 #include "util/z_print_util.h"
-
 // vcv-puredata
 #include <osdialog.h>
 #include <iostream>
@@ -18,6 +16,7 @@
 #endif
 
 using namespace rack;
+
 static const int NUM_ROWS = 6;
 static const int MAX_BUFFER_SIZE = 4096;
 
@@ -60,26 +59,7 @@ struct ScriptEngine {
     PureData* module = NULL;
 };
 
-struct ScriptEngineFactory {
-    virtual ScriptEngine* createScriptEngine() = 0;
-};
-extern std::map<std::string, ScriptEngineFactory*> scriptEngineFactories;
-
-/** Called from functions with
-__attribute__((constructor(1000)))
-*/
-template<typename TScriptEngine>
-void addScriptEngine(std::string extension) {
-    struct TScriptEngineFactory : ScriptEngineFactory {
-        ScriptEngine* createScriptEngine() override {
-            return new TScriptEngine;
-        }
-    };
-    scriptEngineFactories[extension] = new TScriptEngineFactory;
-}
-
 static const int BUFFERSIZE = MAX_BUFFER_SIZE * NUM_ROWS;
-
 
 // there is no multi-instance support for receiving messages from libpd
 // for now, received values for the module gui will be stored in global variables
@@ -93,11 +73,9 @@ static std::vector<std::string> split(const std::string& s, char delim) {
     std::vector<std::string> result;
     std::stringstream ss(s);
     std::string item;
-
     while (getline(ss, item, delim)) {
         result.push_back(item);
     }
-
     return result;
 }
 
@@ -153,9 +131,7 @@ struct LibPDEngine : ScriptEngine {
         std::string version = "pd " + std::to_string(PD_MAJOR_VERSION) + "." +
                               std::to_string(PD_MINOR_VERSION) + "." +
                               std::to_string(PD_BUGFIX_VERSION);
-
         display(version);
-
 //        std::string name = string::filename(path);
 //        std::string dir  = string::directory(path);
         std::string name = system::getFilename(path);
@@ -179,7 +155,6 @@ struct LibPDEngine : ScriptEngine {
         }
 
         libpd_set_instance(_lpd);
-
         // knobs
         for (int i = 0; i < NUM_ROWS; i++) {
             if (knobChanged(block->knobs, i)) {
@@ -356,7 +331,6 @@ const std::map<std::string, int> LibPDEngine::_utility_map{
     { "error:", 1 }
 };
 
-
 void LibPDEngine::sendKnob(const int idx, const float value) {
     std::string knob = "K" + std::to_string(idx + 1);
     libpd_start_message(1);
@@ -393,30 +367,9 @@ void LibPDEngine::sendInitialStates(const ProcessBlock* block) {
     //g_display_is_valid = false;
 }
 
+// ------------------- plugin ------------------------------
 
-__attribute__((constructor(1000)))
-static void constructor() {
-    addScriptEngine<LibPDEngine>("pd");
-}
-
-// ------------------
-
-
-using namespace rack;
 Plugin* pluginInstance;
-
-
-// Don't bother deleting this with a destructor.
-__attribute((init_priority(999)))
-std::map<std::string, ScriptEngineFactory*> scriptEngineFactories;
-
-ScriptEngine* createScriptEngine(std::string extension) {
-	auto it = scriptEngineFactories.find(extension);
-	if (it == scriptEngineFactories.end())
-		return NULL;
-	return it->second->createScriptEngine();
-}
-
 
 static std::string settingsEditorPath;
 static std::string settingsPdEditorPath =
@@ -425,7 +378,6 @@ static std::string settingsPdEditorPath =
 #else
 	"";
 #endif
-
 
 json_t* settingsToJson() {
 	json_t* rootJ = json_object();
@@ -444,8 +396,7 @@ void settingsFromJson(json_t* rootJ) {
 		settingsPdEditorPath = json_string_value(pdEditorPathJ);
 }
 
-void settingsLoad() {
-	// Load plugin settings
+void settingsLoad() { // Load plugin settings
 	std::string filename = asset::user("Pd-PureData.json");
 	FILE* file = std::fopen(filename.c_str(), "r");
 	if (!file) {
@@ -498,14 +449,6 @@ std::string getApplicationPathDialog() {
 	std::free(pathC);
 	return path;
 }
-
-/*void setEditorDialog() {
-	std::string path = getApplicationPathDialog();
-	if (path == "")
-		return;
-    settingsPdEditorPath = path;
-	settingsSave();
-}*/
 
 void setPdEditorDialog() {
 	std::string path = getApplicationPathDialog();
@@ -729,8 +672,8 @@ struct PureData : Module {
         if (!extension.empty() && extension[0] == '.') {
             extension = extension.substr(1);
         }
-        
-        scriptEngine = createScriptEngine(extension);
+//        scriptEngine = createScriptEngine(extension);
+        scriptEngine = new LibPDEngine();
         if (!scriptEngine) {
             message = string::f("No engine for .%s extension", extension.c_str());
             return;
@@ -746,17 +689,6 @@ struct PureData : Module {
         }
         this->engineName = scriptEngine->getEngineName();
     }
-
-/*	static void watchCallback(efsw_watcher watcher, efsw_watchid watchid, const char* dir, const char* filename, enum efsw_action action, const char* old_filename, void* param) {
-		PureData* that = (PureData*) param;
-		if (action == EFSW_ADD || action == EFSW_DELETE || action == EFSW_MODIFIED || action == EFSW_MOVED) {
-			// Check filename
-			std::string pathFilename = string::filename(that->path);
-			if (pathFilename == filename) {
-				that->loadPath();
-			}
-		}
-	}*/
 
 	json_t* dataToJson() override {
 		json_t* rootJ = json_object();
@@ -803,49 +735,6 @@ struct PureData : Module {
 		return file.good();
 	}
 
-	void newScriptDialog() {
-		std::string ext = "js";
-		// Get current extension if a script is currently loaded
-		if (!path.empty()) {
-//			ext = string::filenameExtension(string::filename(path));
-            ext = system::getExtension(system::getFilename(path));
-		}
-		std::string dir = asset::plugin(pluginInstance, "examples");
-		std::string filename = "Untitled." + ext;
-		char* newPathC = osdialog_file(OSDIALOG_SAVE, dir.c_str(), filename.c_str(), NULL);
-		if (!newPathC) {
-			return;
-		}
-		std::string newPath = newPathC;
-		std::free(newPathC);
-
-		// Unload script so the user is guaranteed to see the following error messages if they occur.
-		setPath("");
-
-		// Get extension of requested filename
-//		ext = string::filenameExtension(string::filename(newPath));
-        ext = system::getExtension(system::getFilename(newPath));
-		if (ext == "") {
-			message = "File extension required";
-			return;
-		}
-		auto it = scriptEngineFactories.find(ext);
-		if (it == scriptEngineFactories.end()) {
-			message = "File extension \"" + ext + "\" not recognized";
-			return;
-		}
-
-		// Copy template to new script
-		std::string templatePath = asset::plugin(pluginInstance, "examples/template." + ext);
-		{
-			std::ifstream templateFile(templatePath, std::ios::binary);
-			std::ofstream newFile(newPath, std::ios::binary);
-			newFile << templateFile.rdbuf();
-		}
-		setPath(newPath);
-		editScript();
-	}
-
 	void loadScriptDialog() {
 		std::string dir = asset::plugin(pluginInstance, "examples");
 		char* pathC = osdialog_file(OSDIALOG_OPEN, dir.c_str(), NULL, NULL);
@@ -865,7 +754,6 @@ struct PureData : Module {
 	void saveScriptDialog() {
 		if (script == "")
 			return;
-
 //		std::string ext = string::filenameExtension(string::filename(path));
         std::string ext = system::getExtension(system::getFilename(path));
 		std::string dir = asset::plugin(pluginInstance, "examples");
@@ -881,7 +769,6 @@ struct PureData : Module {
         std::string newExt = system::getExtension(system::getFilename(newPath));
 		if (newExt == "")
 			newPath += "." + ext;
-
 		// Write and close file
 		{
 			std::ofstream f(newPath);
@@ -921,7 +808,7 @@ struct PureData : Module {
 	}
 
 	void appendContextMenu(Menu* menu) {
-		struct NewScriptItem : MenuItem {
+/*		struct NewScriptItem : MenuItem {
 			PureData* module;
 			void onAction(const event::Action& e) override {
 				module->newScriptDialog();
@@ -929,7 +816,7 @@ struct PureData : Module {
 		};
 		NewScriptItem* newScriptItem = createMenuItem<NewScriptItem>("New patch");
 		newScriptItem->module = this;
-		menu->addChild(newScriptItem);
+		menu->addChild(newScriptItem);*/
 
 		struct LoadScriptItem : MenuItem {
 			PureData* module;
@@ -975,14 +862,6 @@ struct PureData : Module {
 
 		menu->addChild(new MenuSeparator);
 
-/*		struct SetEditorItem : MenuItem {
-			void onAction(const event::Action& e) override {
-				setEditorDialog();
-			}
-		};
-		SetEditorItem* setEditorItem = createMenuItem<SetEditorItem>("Set text editor application");
-		menu->addChild(setEditorItem);*/
-
 		struct SetPdEditorItem : MenuItem {
 			void onAction(const event::Action& e) override {
 				setPdEditorDialog();
@@ -999,7 +878,6 @@ struct PureData : Module {
 //		if (string::filenameExtension(string::filename(path)) == "pd")
 //        if (system::getExtension(system::getFilename(path)) == "pd")
 			return settingsPdEditorPath;
-//		return settingsEditorPath;
 	}
 };
 
