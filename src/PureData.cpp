@@ -112,7 +112,7 @@ struct LibPDEngine : ScriptEngine {
         // DEBUG
 //        fprintf(stderr, ">>> LibPDEngine::run() called\n");
         ProcessBlock* block = getProcessBlock();
-        _sampleRate = block->sampleRate;
+        _sampleRate = (int)APP->engine->getSampleRate(); // block->sampleRate;
         setBufferSize(_pd_block_size);
         setFrameDivider(1);
         libpd_init();
