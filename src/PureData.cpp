@@ -117,12 +117,13 @@ struct LibPDEngine : ScriptEngine {
         setFrameDivider(1);
         libpd_init();
         
-// Set ELSE to the path
-        std::string pluginPath = asset::plugin(pluginInstance, "");
-        std::string elsePath = pluginPath + "patches/else";
+// Set ELSE's path
+//        std::string pluginPath = asset::plugin(pluginInstance, "");
+//        std::string elsePath = pluginPath + "patches/else";
         // DEBUG
 //        fprintf(stderr, "ELSE path: %s\n", elsePath.c_str());
-        libpd_add_to_search_path(elsePath.c_str());
+// Add ELSE to path
+//        libpd_add_to_search_path(elsePath.c_str());
 //        fprintf(stderr, "ELSE path set to: %s\n", elsePath.c_str());
 //        fprintf(stderr, "Search path added. Check if folder exists: ");
 /*        FILE* test = fopen((elsePath + "/adsr~.darwin-arm64-32.so").c_str(), "r");
@@ -135,10 +136,10 @@ struct LibPDEngine : ScriptEngine {
         
         _lpd = libpd_new_instance();
 
-//        libpd_set_printhook((t_libpd_printhook)libpd_print_concatenator);
-        libpd_set_printhook([](const char* s) {
+        libpd_set_printhook((t_libpd_printhook)libpd_print_concatenator);
+/*        libpd_set_printhook([](const char* s) {
             fprintf(stderr, "libpd: %s\n", s);
-        });
+        });*/
         libpd_set_concatenated_printhook(receiveLights);
 // we now allow multiple instances
 /*        if (libpd_num_instances() > 2) {

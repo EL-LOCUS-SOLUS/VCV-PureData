@@ -4,7 +4,7 @@ FLAGS += -Idep/include
 CFLAGS +=
 CXXFLAGS +=
 
-LDFLAGS +=
+LDFLAGS += -Wl,-export_dynamic
 SOURCES += src/PureData.cpp
 
 DISTRIBUTABLES += res patches
@@ -50,5 +50,4 @@ endif
 endif
 	cd dep/libpd && $(MAKE) install prefix="$(DEP_PATH)"
 
-LDFLAGS += -Wl,-export_dynamic
 include $(RACK_DIR)/plugin.mk
