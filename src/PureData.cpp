@@ -62,13 +62,8 @@ struct ScriptEngine {
 
 static const int BUFFERSIZE = MAX_BUFFER_SIZE * NUM_ROWS;
 
-// there is no multi-instance support for receiving messages from libpd
-// for now, received values for the module gui will be stored in global variables
-
-static float g_lights[NUM_ROWS][3] = {};
-static float g_switchLights[NUM_ROWS][3] = {};
-static std::string g_utility[2] = {};
-static bool g_display_is_valid = false;
+// Thread-local storage for current engine instance being processed
+static thread_local class LibPDEngine* g_current_engine = nullptr;
 
 static std::vector<std::string> split(const std::string& s, char delim) {
     std::vector<std::string> result;
@@ -87,6 +82,12 @@ struct LibPDEngine : ScriptEngine {
     int _ticks = 0;
     bool _init = true;
 
+    // Per-instance state
+    float _lights[NUM_ROWS][3] = {};
+    float _switchLights[NUM_ROWS][3] = {};
+    std::string _utility[2] = {};
+    bool _display_is_valid = false;
+
     float _old_knobs[NUM_ROWS] = {};
     bool  _old_switches[NUM_ROWS] = {};
     float _output[BUFFERSIZE] = {};
@@ -95,8 +96,9 @@ struct LibPDEngine : ScriptEngine {
     const static std::map<std::string, int> _switchLight_map;
     const static std::map<std::string, int> _utility_map;
     ~LibPDEngine() {
-        if (_lpd)
+        if (_lpd) {
             libpd_free_instance(_lpd);
+        }
     }
     void sendInitialStates(const ProcessBlock* block);
     static void receiveLights(const char* s);
@@ -108,7 +110,7 @@ struct LibPDEngine : ScriptEngine {
         // DEBUG
 //        fprintf(stderr, ">>> LibPDEngine::run() called\n");
         ProcessBlock* block = getProcessBlock();
-        _sampleRate = (int)APP->engine->getSampleRate(); // block->sampleRate;
+        _sampleRate = (int)APP->engine->getSampleRate();
         setBufferSize(_pd_block_size);
         setFrameDivider(1);
         libpd_init();
@@ -132,17 +134,14 @@ struct LibPDEngine : ScriptEngine {
         
         _lpd = libpd_new_instance();
 
+        // Set thread-local variable to track current engine for callbacks
+        g_current_engine = this;
+
         libpd_set_printhook((t_libpd_printhook)libpd_print_concatenator);
 /*        libpd_set_printhook([](const char* s) {
             fprintf(stderr, "libpd: %s\n", s);
         });*/
         libpd_set_concatenated_printhook(receiveLights);
-// we now allow multiple instances
-/*        if (libpd_num_instances() > 2) {
-            display("Multiple simultaneous libpd (Pure Data) instances not yet supported.");
-            return -1;
-        }*/
-        //display(std::to_string(libpd_num_instances()));
         libpd_init_audio(NUM_ROWS, NUM_ROWS, _sampleRate);
 
         // compute audio    [; pd dsp 1(
@@ -172,6 +171,8 @@ struct LibPDEngine : ScriptEngine {
         }
 
         libpd_set_instance(_lpd);
+        // Set thread-local variable to track current engine for callbacks
+        g_current_engine = this;
         // knobs
         for (int i = 0; i < NUM_ROWS; i++) {
             if (knobChanged(block->knobs, i)) {
@@ -180,15 +181,15 @@ struct LibPDEngine : ScriptEngine {
         }
         // lights
         for (int i = 0; i < NUM_ROWS; i++) {
-            block->lights[i][0] = g_lights[i][0];
-            block->lights[i][1] = g_lights[i][1];
-            block->lights[i][2] = g_lights[i][2];
+            block->lights[i][0] = _lights[i][0];
+            block->lights[i][1] = _lights[i][1];
+            block->lights[i][2] = _lights[i][2];
         }
         // switch lights
         for (int i = 0; i < NUM_ROWS; i++) {
-            block->switchLights[i][0] = g_switchLights[i][0];
-            block->switchLights[i][1] = g_switchLights[i][1];
-            block->switchLights[i][2] = g_switchLights[i][2];
+            block->switchLights[i][0] = _switchLights[i][0];
+            block->switchLights[i][1] = _switchLights[i][1];
+            block->switchLights[i][2] = _switchLights[i][2];
         }
         // switches
         for (int i = 0; i < NUM_ROWS; i++) {
@@ -197,9 +198,9 @@ struct LibPDEngine : ScriptEngine {
             }
         }
         // display
-        if (g_display_is_valid) {
-            display(g_utility[1]);
-            g_display_is_valid = false;
+        if (_display_is_valid) {
+            display(_utility[1]);
+            _display_is_valid = false;
         }
         // process samples in libpd
         _ticks = 1;
@@ -217,6 +218,12 @@ struct LibPDEngine : ScriptEngine {
 };
 
 void LibPDEngine::receiveLights(const char* s) {
+    // Get the current engine instance from thread-local storage
+    LibPDEngine* engine = g_current_engine;
+    if (!engine) {
+        return;  // No engine instance set
+    }
+    
     std::string str = std::string(s);
     std::vector<std::string> atoms = split(str, ' ');
 
@@ -233,9 +240,9 @@ void LibPDEngine::receiveLights(const char* s) {
         }
         //std::cout << v[1] << ", " << g_led_map[v[1]] << std::endl;
         if (light_is_valid && atoms.size() == 5) {
-            g_lights[light_idx][0] = stof(atoms[2]); // red
-            g_lights[light_idx][1] = stof(atoms[3]); // green
-            g_lights[light_idx][2] = stof(atoms[4]); // blue
+            engine->_lights[light_idx][0] = stof(atoms[2]); // red
+            engine->_lights[light_idx][1] = stof(atoms[3]); // green
+            engine->_lights[light_idx][2] = stof(atoms[4]); // blue
         }
         else {
             // error
@@ -252,14 +259,14 @@ void LibPDEngine::receiveLights(const char* s) {
         }
         //std::cout << v[1] << ", " << g_led_map[v[1]] << std::endl;
         if (switchLight_is_valid && atoms.size() == 5) {
-            g_switchLights[switchLight_idx][0] = stof(atoms[2]); // red
-            g_switchLights[switchLight_idx][1] = stof(atoms[3]); // green
-            g_switchLights[switchLight_idx][2] = stof(atoms[4]); // blue
+            engine->_switchLights[switchLight_idx][0] = stof(atoms[2]); // red
+            engine->_switchLights[switchLight_idx][1] = stof(atoms[3]); // green
+            engine->_switchLights[switchLight_idx][2] = stof(atoms[4]); // blue
         }
         else {
             // error
         }
-        // parse switch lights list
+        // parse utility/display messages
         bool utility_is_valid = true;
         try {
             _utility_map.at(atoms[1]);      // map::at throws an out-of-range
@@ -271,12 +278,12 @@ void LibPDEngine::receiveLights(const char* s) {
         }
         //std::cout << v[1] << ", " << g_led_map[v[1]] << std::endl;
         if (utility_is_valid && atoms.size() >= 3) {
-            g_utility[0] = atoms[1]; // display
-            g_utility[1] = "";
+            engine->_utility[0] = atoms[1]; // display
+            engine->_utility[1] = "";
             for (unsigned i = 0; i < atoms.size() - 2; i++) {
-                g_utility[1] += " " + atoms[i + 2]; // concatenate message
+                engine->_utility[1] += " " + atoms[i + 2]; // concatenate message
             }
-            g_display_is_valid = true;
+            engine->_display_is_valid = true;
         }
         else {
             // error
@@ -370,18 +377,18 @@ void LibPDEngine::sendInitialStates(const ProcessBlock* block) {
     }
 
     for (int i = 0; i < NUM_ROWS; i++) {
-        g_lights[i][0] = 0;
-        g_lights[i][1] = 0;
-        g_lights[i][2] = 0;
-        g_switchLights[i][0] = 0;
-        g_switchLights[i][1] = 0;
-        g_switchLights[i][2] = 0;
+        _lights[i][0] = 0;
+        _lights[i][1] = 0;
+        _lights[i][2] = 0;
+        _switchLights[i][0] = 0;
+        _switchLights[i][1] = 0;
+        _switchLights[i][2] = 0;
     }
 
-    //g_utility[0] = "";
-    //g_utility[1] = "";
+    //_utility[0] = "";
+    //_utility[1] = "";
 
-    //g_display_is_valid = false;
+    //_display_is_valid = false;
 }
 
 // ------------------- plugin ------------------------------
