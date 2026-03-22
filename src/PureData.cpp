@@ -39,7 +39,6 @@ struct ProcessBlock {
 struct ScriptEngine {
     // Virtual methods for subclasses
     virtual ~ScriptEngine() {}
-    virtual std::string getEngineName() {return "";}
     /** Executes the script.
     Return nonzero if failure, and set error message with setMessage().
     Called only once per instance.
@@ -108,9 +107,6 @@ struct LibPDEngine : ScriptEngine {
     bool switchChanged(const bool* knobs, int idx);
     void sendKnob(const int idx, const float value);
     void sendSwitch(const int idx, const bool value);
-    std::string getEngineName() override {
-        return "Pure Data";
-    }
     int run(const std::string& path, const std::string& script) override {
         // DEBUG
 //        fprintf(stderr, ">>> LibPDEngine::run() called\n");
@@ -120,12 +116,13 @@ struct LibPDEngine : ScriptEngine {
         setFrameDivider(1);
         libpd_init();
         
-// Set ELSE to the path
-        std::string pluginPath = asset::plugin(pluginInstance, "");
-        std::string elsePath = pluginPath + "patches/else";
+// Set ELSE's path
+//        std::string pluginPath = asset::plugin(pluginInstance, "");
+//        std::string elsePath = pluginPath + "patches/else";
         // DEBUG
 //        fprintf(stderr, "ELSE path: %s\n", elsePath.c_str());
-        libpd_add_to_search_path(elsePath.c_str());
+// Add ELSE to path
+//        libpd_add_to_search_path(elsePath.c_str());
 //        fprintf(stderr, "ELSE path set to: %s\n", elsePath.c_str());
 //        fprintf(stderr, "Search path added. Check if folder exists: ");
 /*        FILE* test = fopen((elsePath + "/adsr~.darwin-arm64-32.so").c_str(), "r");
@@ -138,10 +135,10 @@ struct LibPDEngine : ScriptEngine {
         
         _lpd = libpd_new_instance();
 
-//        libpd_set_printhook((t_libpd_printhook)libpd_print_concatenator);
-        libpd_set_printhook([](const char* s) {
+        libpd_set_printhook((t_libpd_printhook)libpd_print_concatenator);
+/*        libpd_set_printhook([](const char* s) {
             fprintf(stderr, "libpd: %s\n", s);
-        });
+        });*/
         libpd_set_concatenated_printhook(receiveLights);
         
         // Register this engine instance in the global map
@@ -152,11 +149,6 @@ struct LibPDEngine : ScriptEngine {
         libpd_start_message(1); // one entry in list
         libpd_add_float(1.0f);
         libpd_finish_message("pd", "dsp");
-
-        std::string version = "pd " + std::to_string(PD_MAJOR_VERSION) + "." +
-                              std::to_string(PD_MINOR_VERSION) + "." +
-                              std::to_string(PD_BUGFIX_VERSION);
-        display(version);
 //        std::string name = string::filename(path);
 //        std::string dir  = string::directory(path);
         std::string name = system::getFilename(path);
@@ -506,7 +498,6 @@ struct PureData : Module {
 	std::string message;
 	std::string path;
 	std::string script;
-	std::string engineName;
 	std::mutex scriptMutex;
 	ScriptEngine* scriptEngine = NULL;
 	int frame = 0;
@@ -678,7 +669,6 @@ struct PureData : Module {
             scriptEngine = NULL;
         }
         this->script = "";
-        this->engineName = "";
         this->message = "";
         // Reset process state
         frameDivider = 32;
@@ -712,7 +702,6 @@ struct PureData : Module {
             scriptEngine = NULL;
             return;
         }
-        this->engineName = scriptEngine->getEngineName();
     }
 
 	json_t* dataToJson() override {
@@ -930,21 +919,18 @@ ProcessBlock* ScriptEngine::getProcessBlock() {
 
 struct FileChoice : LedDisplayChoice {
 	PureData* module;
-
 	void step() override {
-		if (module && module->engineName != "")
-			text = module->engineName;
-		else
-			text = "Patch";
-		text += ": ";
+        std::string version = std::to_string(PD_MAJOR_VERSION) + "." +
+                              std::to_string(PD_MINOR_VERSION) + "-" +
+                              std::to_string(PD_BUGFIX_VERSION);
+        text = "Pd-" + version + " | ";
         if (module && module->path != ""){
 //			text += string::filename(module->path);
             text += system::getFilename(module->path);
         }
 		else
-			text += "(click to load)";
+			text += "(click to load a file)";
 	}
-
 	void onAction(const event::Action& e) override {
 		Menu* menu = createMenu();
 		module->appendContextMenu(menu);
