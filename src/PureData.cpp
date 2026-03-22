@@ -62,8 +62,8 @@ struct ScriptEngine {
 
 static const int BUFFERSIZE = MAX_BUFFER_SIZE * NUM_ROWS;
 
-// Per-instance state for multi-instance support
-static std::map<t_pdinstance*, class LibPDEngine*> g_pdinstance_to_engine;
+// Thread-local storage for current engine instance being processed
+static thread_local class LibPDEngine* g_current_engine = nullptr;
 
 static std::vector<std::string> split(const std::string& s, char delim) {
     std::vector<std::string> result;
@@ -97,7 +97,6 @@ struct LibPDEngine : ScriptEngine {
     const static std::map<std::string, int> _utility_map;
     ~LibPDEngine() {
         if (_lpd) {
-            g_pdinstance_to_engine.erase(_lpd);
             libpd_free_instance(_lpd);
         }
     }
@@ -135,14 +134,14 @@ struct LibPDEngine : ScriptEngine {
         
         _lpd = libpd_new_instance();
 
+        // Set thread-local variable to track current engine for callbacks
+        g_current_engine = this;
+
         libpd_set_printhook((t_libpd_printhook)libpd_print_concatenator);
 /*        libpd_set_printhook([](const char* s) {
             fprintf(stderr, "libpd: %s\n", s);
         });*/
         libpd_set_concatenated_printhook(receiveLights);
-        
-        // Register this engine instance in the global map
-        g_pdinstance_to_engine[_lpd] = this;
         libpd_init_audio(NUM_ROWS, NUM_ROWS, _sampleRate);
 
         // compute audio    [; pd dsp 1(
@@ -172,6 +171,8 @@ struct LibPDEngine : ScriptEngine {
         }
 
         libpd_set_instance(_lpd);
+        // Set thread-local variable to track current engine for callbacks
+        g_current_engine = this;
         // knobs
         for (int i = 0; i < NUM_ROWS; i++) {
             if (knobChanged(block->knobs, i)) {
@@ -217,13 +218,11 @@ struct LibPDEngine : ScriptEngine {
 };
 
 void LibPDEngine::receiveLights(const char* s) {
-    // Get the current libpd instance to find the correct engine
-    t_pdinstance* current_pd = libpd_get_instance();
-    auto it = g_pdinstance_to_engine.find(current_pd);
-    if (it == g_pdinstance_to_engine.end()) {
-        return;  // No matching engine instance
+    // Get the current engine instance from thread-local storage
+    LibPDEngine* engine = g_current_engine;
+    if (!engine) {
+        return;  // No engine instance set
     }
-    LibPDEngine* engine = it->second;
     
     std::string str = std::string(s);
     std::vector<std::string> atoms = split(str, ' ');
