@@ -138,10 +138,10 @@ struct LibPDEngine : ScriptEngine {
         
         _lpd = libpd_new_instance();
 
-        libpd_set_printhook((t_libpd_printhook)libpd_print_concatenator);
-/*        libpd_set_printhook([](const char* s) {
+//        libpd_set_printhook((t_libpd_printhook)libpd_print_concatenator);
+        libpd_set_printhook([](const char* s) {
             fprintf(stderr, "libpd: %s\n", s);
-        });*/
+        });
         libpd_set_concatenated_printhook(receiveLights);
         
         // Register this engine instance in the global map
