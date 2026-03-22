@@ -11,6 +11,14 @@ This is maintained by Porres, please support me on <https://www.patreon.com/porr
 
 This works is based on an old and abandoned project called Prototype, which used to run Pd patches via libpd. You don't need Pure Data installed in your system, but of course it's nice if you do as you can call it via VCV to edit patches.
 
+## Contributors
+
+- [Wes Milholen](https://grayscale.info/): panel design
+- [Andrew Belt](https://github.com/AndrewBelt): host code
+- [CHAIR](https://chair.audio) (Clemens Wegener, Max Neupert): libpd support for the prototype module
+- Porres, worked on the old prototype module, stripped down to Pd only, ported to VCV2 and made some other changes like adding multi instance support to create this project.
+
+
 ## Build dependencies
 
 Set up your build environment like described here, including the dependencies: https://vcvrack.com/manual/Building
@@ -49,10 +57,3 @@ make dep
 make
 ```
 
-
-## Contributors
-
-- [Wes Milholen](https://grayscale.info/): panel design
-- [Andrew Belt](https://github.com/AndrewBelt): host code
-- [CHAIR](https://chair.audio) (Clemens Wegener, Max Neupert): libpd
-- Porres, worked on the old prototype module, stripped down to Pd only, ported to VCV2 and made some other changes to create this project

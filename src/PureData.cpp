@@ -63,7 +63,7 @@ struct ScriptEngine {
 static const int BUFFERSIZE = MAX_BUFFER_SIZE * NUM_ROWS;
 
 // Thread-local storage for current engine instance being processed
-static thread_local class LibPDEngine* g_current_engine = nullptr;
+static thread_local struct LibPDEngine* g_current_engine = nullptr;
 
 static std::vector<std::string> split(const std::string& s, char delim) {
     std::vector<std::string> result;
